@@ -1,20 +1,17 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 
-const NEXT = {
-  已收: ["水洗", "烘干", "熨烫", "待取"],
-  水洗: ["烘干", "熨烫", "待取"],
-  烘干: ["熨烫", "待取"],
-  熨烫: ["待取"],
-};
-
 export default function Process() {
   const [rows, setRows] = useState([]);
+  const [forward, setForward] = useState({});
+  const [terminal, setTerminal] = useState([]);
   const [msg, setMsg] = useState("");
 
   async function load() {
-    const all = await api.挂牌列表();
-    setRows(all.filter((r) => !["已取", "超期隔离", "丢失隔离"].includes(r.status)));
+    const [all, rule] = await Promise.all([api.挂牌列表(), api.工序口径()]);
+    setForward(rule.前向 || {});
+    setTerminal(rule.终态 || []);
+    setRows(all.filter((r) => !(rule.终态 || []).includes(r.status)));
   }
 
   useEffect(() => {
@@ -59,11 +56,18 @@ export default function Process() {
               <td>{r.due_date}</td>
               <td>
                 <div className="row">
-                  {(NEXT[r.status] || []).map((s) => (
-                    <button key={s} type="button" className="ghost" onClick={() => go(r.ticket_no, s)}>
-                      {s}
-                    </button>
-                  ))}
+                  {(forward[r.status] || [])
+                    .filter((s) => !terminal.includes(s))
+                    .map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className="ghost"
+                        onClick={() => go(r.ticket_no, s)}
+                      >
+                        {s}
+                      </button>
+                    ))}
                 </div>
               </td>
             </tr>

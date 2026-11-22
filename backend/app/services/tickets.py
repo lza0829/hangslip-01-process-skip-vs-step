@@ -4,8 +4,9 @@ from datetime import datetime
 
 from fastapi import HTTPException
 
-from app.db import FORWARD, connect, transaction
+from app.db import connect, transaction
 from app.services.gate import ensure_day_row, is_day_sealed, refresh_in_flight, today_str
+from app.services.rules import can_advance, next_statuses
 
 
 def list_tickets(status: str | None = None, store_code: str | None = None) -> list[dict]:
@@ -126,12 +127,13 @@ def advance(ticket_no: str, to_status: str, operator: str = "店员", note: str 
         if not row:
             raise HTTPException(404, "挂牌不存在")
         cur = row["status"]
-        if cur in ("已取", "超期隔离", "丢失隔离"):
-            raise HTTPException(409, f"当前态「{cur}」不可推进工序")
-        allowed = FORWARD.get(cur, ())
-        if to_status not in allowed:
+        if not can_advance(cur, to_status):
+            if not next_statuses(cur):
+                raise HTTPException(409, f"当前态「{cur}」不可推进工序")
             raise HTTPException(409, f"不可从「{cur}」到「{to_status}」")
         now = datetime.now().replace(microsecond=0).isoformat(sep=" ")
+        # 可跳步：跳过的中间工位不写事件行，事件链只记「起点 -> 落点」。
+        # 写事件与改现行态在同一事务内，失败一并回滚，绝不半截。
         conn.execute(
             "UPDATE hang_tickets SET status=? WHERE ticket_no=?",
             (to_status, ticket_no),

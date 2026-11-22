@@ -20,6 +20,7 @@ async function req(path, opts = {}) {
 
 export const api = {
   总览: () => req("/总览"),
+  工序口径: () => req("/工序口径"),
   门店: () => req("/门店"),
   挂牌列表: (q = "") => req(`/挂牌${q}`),
   挂牌详情: (no) => req(`/挂牌/${encodeURIComponent(no)}`),

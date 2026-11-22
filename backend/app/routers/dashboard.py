@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.db import connect
 from app.services.gate import today_str
+from app.services.rules import event_status_counts, in_flight_count
 
 router = APIRouter(tags=["总览"])
 
@@ -12,28 +13,17 @@ router = APIRouter(tags=["总览"])
 def dashboard():
     conn = connect()
     try:
-        def cnt(status: str) -> int:
-            return conn.execute(
-                "SELECT COUNT(*) AS c FROM hang_tickets WHERE status=?", (status,)
-            ).fetchone()["c"]
-
         day = today_str()
         gate = conn.execute("SELECT * FROM day_gates WHERE day=?", (day,)).fetchone()
-        wm = conn.execute(
-            "SELECT value FROM watermarks WHERE key='在途票'"
-        ).fetchone()
+        # 工序分布与事件表同源：只按落点计，跳过的中间工位不算在制。
+        counts = event_status_counts(conn)
+        # 水位按现行态（落点）实时重算，不再读可能滞后的历史快照。
+        waterline = in_flight_count(conn)
         return {
             "今日": day,
             "日闸": "已结案" if gate and gate["sealed"] else "开放",
-            "在途水位": wm["value"] if wm else 0,
-            "已收": cnt("已收"),
-            "水洗": cnt("水洗"),
-            "烘干": cnt("烘干"),
-            "熨烫": cnt("熨烫"),
-            "待取": cnt("待取"),
-            "已取": cnt("已取"),
-            "超期隔离": cnt("超期隔离"),
-            "丢失隔离": cnt("丢失隔离"),
+            "在途水位": waterline,
+            **counts,
         }
     finally:
         conn.close()
